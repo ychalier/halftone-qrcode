@@ -1,3 +1,6 @@
+"""Convert any image to a halftone QR using techniques described in
+'Halftone QR codes' (Chu et al. 2013.)
+"""
 import argparse
 import os
 from pathlib import Path

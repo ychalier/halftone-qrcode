@@ -1,0 +1,11 @@
+# Python
+__pycache__
+*.pyc
+
+# Medias
+*.jpg
+*.png
+*.gif
+*.mp4
+!mask.png
+!examples/*

@@ -1,0 +1,3 @@
+[submodule "fftools"]
+	path = fftools
+	url = https://github.com/ychalier/fftools
