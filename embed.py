@@ -12,7 +12,7 @@ from hqr import PATTERNS, HalftoneQrCode
 
 import sys
 sys.path.insert(0, "./fftools/fftools/")
-from fftools.fftools.tools import Resize, Cut
+from fftools.fftools.tools import Resize
 from fftools.fftools.utils import startfile
 
 
@@ -46,74 +46,92 @@ def halftone(input_path: Path, output_path: Path):
     cv2.imwrite(output_path.as_posix(), halftone)
 
 
-def embed_hqr(input_path: Path, width: int, height: int, qr_text: str, output_dir: Path, upscale: float = 1, border_width: int = 1, fit: str = "cover"):
+def embed(
+        input_path: Path,
+        width: int,
+        height: int,
+        qr_text: str,
+        output_dir: Path,
+        upscale: float = 1,
+        border_width: int = 1,
+        fit: str = "cover",
+        step: int = 50):
     tmp_dir = Path("./tmp")
-    tmp_dir.mkdir(exist_ok=True)
-    path_in = tmp_dir / "in.png"
-    path_in_ht = tmp_dir / "in_halftone.png"
-    grid_dir = tmp_dir / "grid"
-    if grid_dir.exists():
-        shutil.rmtree(grid_dir)
-    grid_dir.mkdir()
-    codes_dir = tmp_dir / "codes"
-    if codes_dir.exists():
-        shutil.rmtree(codes_dir)
-    codes_dir.mkdir()
-    variants_dir = tmp_dir / "variants"
-    if variants_dir.exists():
-        shutil.rmtree(variants_dir)
-    variants_dir.mkdir()
-
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir()
+    
     print("Resizing image")
-    Resize.run(argparse.Namespace(input_path=input_path.as_posix(), output_path=path_in.as_posix(), width=width, height=height, fit=fit, overwrite=True, no_execute=True))
+    path_in = tmp_dir / "in.png"
+    Resize.run(argparse.Namespace(
+        input_path=input_path.as_posix(),
+        output_path=path_in.as_posix(),
+        width=width,
+        height=height,
+        fit=fit,
+        overwrite=True,
+        no_execute=True))
 
     print("Halftoning image")
+    path_in_ht = tmp_dir / "in_halftone.png"
     halftone(path_in, path_in_ht)
 
     print("Splitting image into grid")
-    Cut.run(argparse.Namespace(input_path=path_in.as_posix(), output_path=(grid_dir / "{row}_{col}.png").as_posix(), max_width=111, max_height=111, overwrite=True, no_execute=True))
+    grid_dir = tmp_dir / "grid"
+    grid_dir.mkdir()
+    img = cv2.imread(path_in.as_posix())
+    for i in range(0, img.shape[0], step):
+        for j in range(0, img.shape[1], step):
+            if i + 111 > img.shape[0] or j + 111 > img.shape[1]:
+                continue
+            cv2.imwrite((grid_dir / f"{i:04d}_{j:04d}.png").as_posix(), img[i:i+111,j:j+111,:])
 
+    codes_dir = tmp_dir / "codes"
+    codes_dir.mkdir()
     for path in tqdm.tqdm(list(grid_dir.glob("*.png")), desc="Generating QR Codes"):
         HalftoneQrCode(qr_text, path, codes_dir / path.name, border_width=border_width).run()
 
+    variants_dir = tmp_dir / "variants"
+    variants_dir.mkdir()
     bg = cv2.imread(path_in_ht.as_posix())
-    rows = cols = -1
-    for path in list(codes_dir.glob("*.png")):
-        i, j = tuple(map(int, path.stem.split("_")))
-        rows = max(rows, i)
-        cols = max(cols, j)
-    rows += 1
-    cols += 1
     for path in tqdm.tqdm(list(codes_dir.glob("*.png")), "Generating output variants"):
         code = cv2.imread(path.as_posix())
         img = bg.copy()
         i, j = tuple(map(int, path.stem.split("_")))
-        sy = i * 111 - border_width
-        sx = j * 111 - border_width
+        sy = i - border_width
+        sx = j - border_width
         sh = 111 + 2 * border_width
         sw = 111 + 2 * border_width
         dy = 0
         dx = 0
-        if i == 0:
+        if sy < 0:
+            sh -= abs(sy)
+            dy = abs(sy)
             sy = 0
-            dy = border_width
-            sh -= border_width
-        if j == 0:
+        if sx < 0:
+            sw -= abs(sx)
+            dx = abs(sx)
             sx = 0
-            dx = border_width
-            sw -= border_width
-        if i == rows - 1:
-            sy = height - 111 - border_width
-            sh -= border_width
-        if j == cols - 1:
-            sx = width - 111 - border_width
-            sw -= border_width
+        if sy + 111 > bg.shape[0]:
+            diff = sy + 111 - bg.shape[0]
+            sy -= diff
+            sh -= diff
+        if sx + 111 > bg.shape[1]:
+            diff = sx + 111 - bg.shape[1]
+            sx -= diff
+            sw -= diff
         img[sy:sy+sh, sx:sx+sw, :] = code[dy:dy+sh, dx:dx+sw, :]
         cv2.imwrite((variants_dir / path.name).as_posix(), img)
 
     output_dir.mkdir(exist_ok=True)
     for path in tqdm.tqdm(list(codes_dir.glob("*.png")), "Upscaling variants"):
-        Resize.run(argparse.Namespace(input_path=(variants_dir / path.name).as_posix(), output_path=(output_dir / path.name).as_posix(), scale=upscale, filter="neighbor", overwrite=True, no_execute=True))
+        Resize.run(argparse.Namespace(
+            input_path=(variants_dir / path.name).as_posix(),
+            output_path=(output_dir / path.name).as_posix(),
+            scale=upscale,
+            filter="neighbor",
+            overwrite=True,
+            no_execute=True))
 
     startfile(output_dir)
 
@@ -128,8 +146,9 @@ def main():
     parser.add_argument("-u", "--upscale", type=float, default=1, help="output scaling factor")
     parser.add_argument("-b", "--border-width", type=int, default=1, help="width of white border around QR code")
     parser.add_argument("-f", "--fit", type=str, choices=["fill", "cover", "contain"])
+    parser.add_argument("-s", "--step", type=int, default=50)
     args = parser.parse_args()
-    embed_hqr(args.input_path, args.width, args.height, args.qr_text, args.output_dir, args.upscale, args.border_width, args.fit)
+    embed(args.input_path, args.width, args.height, args.qr_text, args.output_dir, args.upscale, args.border_width, args.fit, args.step)
 
 
 if __name__ == "__main__":

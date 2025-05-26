@@ -14,7 +14,16 @@ sys.path.insert(0, "./fftools/fftools/")
 from fftools.fftools.tools import Resize, Merge
 
 
-def embed_video(input_path: Path, width: int, height: int, qr_text: str, output_path: Path, fps: str, upscale: float = 1, border_width: int = 6, fit: str = "cover"):
+def video(
+        input_path: Path,
+        width: int,
+        height: int,
+        qr_text: str,
+        output_path: Path,
+        fps: str,
+        upscale: float = 1,
+        border_width: int = 6,
+        fit: str = "cover"):
     tmp_dir = Path("tmp")
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir)
@@ -37,10 +46,20 @@ def embed_video(input_path: Path, width: int, height: int, qr_text: str, output_
     print("Upscaling")
     upscale_dir = tmp_dir / "upscale"
     upscale_dir.mkdir()
-    Resize.run(argparse.Namespace(input_path=(codes_dir / "*.png").as_posix(), output_path=(upscale_dir / "{stem}.png").as_posix(), scale=upscale, filter="neighbor", overwrite=True, no_execute=True, global_progress=True))
+    Resize.run(argparse.Namespace(
+        input_path=(codes_dir / "*.png").as_posix(),
+        output_path=(upscale_dir / "{stem}.png").as_posix(),
+        scale=upscale,
+        filter="neighbor",
+        overwrite=True,
+        no_execute=True,
+        global_progress=True))
 
     print("Merging frames")
-    Merge.run(argparse.Namespace(input_paths=[(upscale_dir / "*.png").as_posix()], output_path=output_path.as_posix(), target=str(fps)))
+    Merge.run(argparse.Namespace(
+        input_paths=[(upscale_dir / "*.png").as_posix()],
+        output_path=output_path.as_posix(),
+        target=str(fps)))
 
 
 def main():
@@ -55,7 +74,7 @@ def main():
     parser.add_argument("-b", "--border-width", type=int, default=1, help="width of white border around QR code")
     parser.add_argument("-f", "--fit", type=str, choices=["fill", "cover", "contain"])
     args = parser.parse_args()
-    embed_video(args.input_path, args.width, args.height, args.qr_text, args.output_path, args.fps, args.upscale, args.border_width, args.fit)
+    video(args.input_path, args.width, args.height, args.qr_text, args.output_path, args.fps, args.upscale, args.border_width, args.fit)
 
 
 if __name__ == "__main__":
